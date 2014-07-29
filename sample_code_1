@@ -1,0 +1,436 @@
+#!/usr/bin/python
+import os
+import time
+import sys
+import errno
+import traceback
+import MySQLdb
+import math
+import logging
+from optparse import *
+
+
+parser = OptionParser()
+
+#This provides the command line argument for userid
+parser.add_option("--uid",dest="uidfile",help="userid",metavar="UFILE")
+
+(option,args)=parser.parse_args()
+
+#Open a Database Connection
+conn = MySQLdb.connect('localhost','ednexadb','skn321!','ednexasite')
+
+#Prepare a cursor object
+cursor = conn.cursor()
+
+#print (option)
+#print (args)
+
+#Creating log file
+logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(levelname)s %(message)s',datefmt='%a, %d %b %Y %H:%M:%S',filename='/home/sachin/log/timetable_planner.log',filemode='a+')
+
+#Final Date
+final_date = "2012-03-10"
+
+sum = 0
+sec_pts = 0
+xmarks = 0
+ximarks = 0
+def fixed_points(sub_id):
+  '''this function gives the total points of all chapters'''
+  logging.info("Enter method - fixed_points() - this function gives the total points of all chapters")
+  chap = "select * from chapter_details where sub_id=%s" % sub_id
+  cursor.execute(chap)
+  chapters = cursor.fetchall()
+  fixed_pts = 0
+  for chapter in chapters:
+    fixed_pts  += chapter[3] * 10
+  #print "fixed pionts: %d" % fixed_pts
+  logging.info("Exit method - fixed_points")
+  return fixed_pts
+
+def secured_points(chapter_id,cover_in_class,cover_in_coll,self_study,MCQ,test_result):
+  '''this funtion gives the secured points of the user'''
+  logging.info("Enter method - secured_points() - this funtion gives the secured points of the user")
+  global sec_pts
+  sec_pts = 0
+  attr = "select *  from student_input_attributes"
+  cursor.execute(attr)
+  points = cursor.fetchall()
+  for point in points:
+    if(cover_in_class == 1):
+      sec_pts += point[1]
+    if(cover_in_coll == 1):
+      sec_pts += point[2]
+    if(self_study == 1):
+      sec_pts += point[3]
+    if(MCQ <=10):
+      sec_pts += 0
+    elif(MCQ <=30 and MCQ > 10):
+      sec_pts += 1
+    elif(MCQ <=50 and MCQ > 30):
+      sec_pts += 2
+    else:
+      sec_pts += 3
+    if(test_result != 0):
+      sec_pts += (test_result * point[5])
+  wtg = "select weightage from chapter_details where id in(select chapter_id from student_details where user_id  = %s and chapter_id = %s )" % (option.uidfile,chapter_id)
+  cursor.execute(wtg)
+  weightage = cursor.fetchall()
+  for row in weightage:
+      sec_pt = sec_pts * row[0]
+  logging.info("Secured Points:%d",sec_pt)
+  logging.info("Exit method - secured_points()")
+  return round(sec_pt)
+
+def remaining_days():
+  '''this gives the remaining days with respect to the final date'''
+  logging.info("Enter method - remaining_days() - this gives the remaining days with respect to the final date")
+  days = "select DATEDIFF('2012-03-10',CURDATE())"
+  cursor.execute(days)
+  remdays = cursor.fetchone()
+  rem_days = remdays[0]
+  #print "Remaining days:%d" % rem_days
+  logging.info("Remaining days:%d",rem_days)
+  logging.info("Exit method - remaining_days()")
+  return rem_days
+
+def study_hour_per_day():
+  '''this function gives the study hour per day of the student(input from student)'''
+  logging.info("Enter method - study_hour_per_day() - this function gives the study hour per day of the student")
+  hours = "select student_study_hrs from student_datas where user_id = %s" % option.uidfile
+  cursor.execute(hours)
+  hrs = cursor.fetchone()
+  hour = hrs[0]
+  #print "Study hours per day: %d" % hour
+  logging.info("Study hours per day:%d",hour)
+  logging.info("Exit method - study_hour_per_day()")
+  return hour
+
+def total_hours():
+  '''this function returns the total hours remaining as per the remaining days and hours'''
+  logging.info("Enter method - total_hours() - 'this function returns the total study hours remaining ")
+  hr = study_hour_per_day()
+  remdays = remaining_days()
+  total_hrs = hr * remdays
+  #print "Total hours:%d" % total_hrs
+  logging.info("Total hours:%d",total_hrs)
+  logging.info("Exit method - total_hours()")
+  return total_hrs
+
+def maximum_points(weightage):
+  '''this function returns the maximum points of each chapter'''
+  logging.info("Enter method - maximum_points() - this function returns the maximum points of each chapter")
+  max_pts = weightage * 10
+  logging.info("Maximum points:%d",max_pts)
+  logging.info("Exit method - maximum_points()")
+  return max_pts
+
+def remaining_points(max_pts,sec_pts):
+  '''this function gives the remaining points of each chapter'''
+  logging.info("Enter method - remaining_points - this function gives the remaining points of each chapter ")
+  rem_pts = max_pts - sec_pts
+  logging.info("Remaining points:%d",rem_pts)
+  logging.info("Exit method - remaining_points()")
+  return rem_pts
+
+def study_hours(total_hrs,rem_pts,fixed_pts):
+  '''this function returns the study hours for each chapter'''
+  logging.info("Enter method - study_hours() - this function returns the study hours for each chapter")
+  study_hrs = (total_hrs * rem_pts) / fixed_pts
+  logging.info("Study Hour:%f",study_hrs)
+  logging.info("Exit method - study_hours()")
+  return round(study_hrs)
+
+def attributes_hours(study_hrs,hrs):
+  '''this function returns the attributes hours for each chapter'''
+  logging.info("Enter method - attributes_hours() - this function returns attributes hours for each chapter")
+  attributes_hrs = (study_hrs) * (hrs)  / 6
+  logging.info("attribute hrs:%f",attributes_hrs)
+  logging.info("Exit method - attributes_hours()")
+  return round(attributes_hrs)
+
+def sum_of_secured_points(sec_pts):
+  '''this function returns the summation of secured points'''
+  logging.info("Enter method - sum_of_secured_points() - this function returns the summation of secured points")
+  global sum
+  sum += sec_pts
+  logging.info("Sum of secured points:%d",sum)
+  logging.info("Exit method - sum_of_secured_points()")
+  return sum
+
+def preparation_level(sum_of_sec_pts,fixed_pts):
+  '''This function returns the preparation level of the student'''
+  logging.info("Enter method - preparation_level() -This function returns the preparation level of the student")
+  user_prep_level = (float(sum_of_sec_pts) * 100) / float(fixed_pts)
+  logging.info("User preparation level:%d",user_prep_level)
+  logging.info("Exit method - preparation_level()")
+  return round(user_prep_level)
+
+def x_marks(marks):
+  '''this function returns the points for 10th marks'''
+  logging.info("Enter method - x_marks() - this function returns the points for 10th marks")
+  global xmarks
+  if(marks >= 90):
+    xmarks = 5
+  elif(marks < 90 and marks >= 80):
+    xmarks = 4
+  elif(marks < 80 and marks >= 70):
+    xmarks = 3
+  elif(marks < 70 and marks >= 60):
+    xmarks = 2
+  else:
+    xmarks = 1
+  logging.info("X marks:%d",xmarks)
+  logging.info("Exit method - x_marks()")
+  return xmarks
+
+def xi_marks(marks):
+  '''this function returns the points for 11th marks'''
+  logging.info("Enter method - xi_marks() - this function returns the points for 11th marks")
+  global ximarks
+  #print "marks : %d" % marks
+  if(marks >= 90):
+    ximarks = 10
+  elif(marks < 90 and marks >= 85):
+    ximarks = 9
+  elif(marks < 85 and marks >= 80):
+    ximarks = 8
+  elif(marks < 80 and marks >= 75):
+    ximarks = 7
+  elif(marks < 75 and marks >= 70):
+    ximarks = 6
+  elif(marks < 70 and marks >= 65):
+    ximarks = 5
+  elif(marks < 65 and marks >= 60):
+    ximarks = 4
+  elif(marks < 60 and marks >= 55):
+    ximarks = 3
+  elif(marks < 55 and marks >= 50):
+    ximarks = 2
+  else:
+    ximarks = 1
+  logging.info("XI marks:%d",ximarks)
+  logging.info("Exit method - xi_marks()")
+  return ximarks
+
+def percent_marks(percent,fixed_pts):
+  '''this function converts the percentage into points'''
+  logging.info("Enter method - percent_marks() - this function converts the percentage into points")
+  marks = (percent * fixed_pts) / 100
+  #print "marks:%f" % marks
+  logging.info("Exit method - percent_marks()")
+  return round(marks)
+
+#Calculation of study Hours
+
+fixed_pts = 0
+rem_days = 0
+hour = 0
+total_hrs = 0
+sum_of_sec_pts = 0
+user_prep_level = 0
+problem_hrs = 0
+theory_hrs = 0
+revision_hrs = 0
+MCQ_hrs = 0
+MCQ_hrs = 0
+Xmarks = 0
+XImarks = 0
+total = 0
+
+
+#Query to fetch user
+try:
+  delrow = "delete from student_results where user_id = %s" % option.uidfile
+  cursor.execute(delrow)
+  logging.info("Delete user : %s records from student_results",option.uidfile)
+    
+  marks = "select * from student_datas where user_id = %s" % option.uidfile
+  cursor.execute(marks)
+  st_data = cursor.fetchone()
+  
+  Xmarks = x_marks(st_data[3])
+  #print "10 marks: %d" % Xmarks
+  logging.info("10 marks: %d" % Xmarks)
+  XImarks = xi_marks(st_data[4])
+  #print "11 marks: %d" % XImarks
+  logging.info("11 marks: %d" % XImarks)
+  total_hrs = total_hours()
+
+
+  phy_pts = fixed_points(1)
+  che_pts = fixed_points(2)
+  math_pts = fixed_points(3)
+  bio_pts = fixed_points(4)
+  group = st_data[2]
+  if(group == 'PCM'):
+    fixed_pts = phy_pts + che_pts + math_pts
+    #print "PCM:%d" % fixed_pts
+    logging.info("PCM:%d",fixed_pts)
+  elif(group == 'PCB'):
+    fixed_pts = phy_pts + che_pts + bio_pts
+    #print "PCB:%d" % fixed_pts
+    logging.info("PCB:%d",fixed_pts)
+  else:
+    fixed_pts = phy_pts + che_pts + math_pts + bio_pts
+    #print "PCMB:%d" % fixed_pts
+    logging.info("PCMB:%d",fixed_pts)
+
+  stud = "select * from student_details where user_id = %s order by chapter_id" % option.uidfile
+  cursor.execute(stud)
+  logging.info("User-id : %s Group : %s ",option.uidfile,st_data[2])
+  data = cursor.fetchall()
+  for row in data:
+        
+#Query to fetch chapters of user
+    try:
+      chapter = "select * from chapter_details where id = %s " % row[2]
+      cursor.execute(chapter)
+      data1 = cursor.fetchall()
+      for item in data1:
+        sec_pts = secured_points(row[2],row[3],row[4],row[6],row[5],row[7])
+        #print "\nChapter:%s" % item[1]
+        logging.info("Chapter:%s",item[1])
+        #print "Secured points:%d" % sec_pts
+        max_pts = maximum_points(item[3])
+        #print "Maximum points:%d" % max_pts
+        rem_pts = remaining_points(max_pts,sec_pts)
+        #print "Remaining points:%d" % rem_pts
+        #print "fixed points: %d" % fixed_pts
+        study_hrs = study_hours(total_hrs,rem_pts,fixed_pts)
+        #print "Study hours:%d" % study_hrs
+        problem_hrs = 0
+        theory_hrs = 0
+        revision_hrs = 0
+        MCQ_hrs = 0
+
+
+#Query to fetch values from subject_attributes table
+        try:
+          attribute = "select cd.id,sa.theory,sa.problems,sa.MCQ from subject_attributes as sa,chapter_details as cd where sa.subject_id=cd.sub_id and cd.id in(select sd.chapter_id from student_details as sd where  sd.chapter_id = %s and user_id = %s)" % (item[0],option.uidfile)
+          cursor.execute(attribute)
+          data2 = cursor.fetchall()
+          for items in data2:
+            if(item[2] == 1 or item[2] == 2 or item[2] == 3):
+              if(study_hrs == 1):
+                revision_hrs = 1
+                MCQ_hrs = 0
+                problem_hrs = 0
+                theory_hrs = 0
+              elif (study_hrs == 2):
+                revision_hrs = 1
+                MCQ_hrs = 1
+                problem_hrs = 0
+                theory_hrs = 0
+              elif (study_hrs == 3):
+                revision_hrs = 1
+                MCQ_hrs = 1
+                problem_hrs = 1
+                theory_hrs = 0
+              elif (study_hrs == 4):
+                revision_hrs = 1
+                MCQ_hrs = 1
+                problem_hrs = 1
+                theory_hrs =1
+              elif (study_hrs == 5):
+                revision_hrs = 1
+                MCQ_hrs = 2
+                problem_hrs = 1
+                theory_hrs =1
+              else:
+                problem_hrs = attributes_hours(study_hrs,items[2])
+                mcq_hrs = attributes_hours(study_hrs,items[3])
+                MCQ_hrs = math.ceil(mcq_hrs)
+                var = MCQ_hrs + problem_hrs
+                theory_hrs = study_hrs - var
+                revision_hrs = 0
+            else:
+              if(study_hrs == 1):
+                revision_hrs = 1
+                MCQ_hrs = 0
+                theory_hrs = 0
+                problem_hrs = 0
+              elif (study_hrs == 2):
+                revision_hrs = 1
+                MCQ_hrs = 1
+                theory_hrs = 0
+                problem_hrs = 0
+              elif (study_hrs == 3):
+                revision_hrs = 1
+                MCQ_hrs = 1
+                theory_hrs = 1
+                problem_hrs = 0
+              elif (study_hrs == 4):
+                revision_hrs = 2
+                MCQ_hrs = 1
+                theory_hrs = 1
+                problem_hrs = 0
+              elif (study_hrs == 5):
+                revision_hrs = 2
+                MCQ_hrs = 2
+                theory_hrs =1
+                problem_hrs = 0
+              else:
+                MCQ_hrs = attributes_hours(study_hrs,items[3])
+                theory_hrs = study_hrs - MCQ_hrs
+                problem_hrs = 0
+                revision_hrs = 0
+#inserting values into student_result table
+          result = "insert into student_results(user_id,chapter_id,rem_pts,total_study_hrs,theory_hrs,problem_hrs,MCQ_hrs,revision_hrs) values('%s','%d','%d','%d','%f','%f','%f','%f')" % (option.uidfile,row[2],rem_pts,study_hrs,theory_hrs,problem_hrs,MCQ_hrs,revision_hrs)
+          logging.info("Inserting user : %s results into student_results",option.uidfile)
+          cursor.execute(result)
+          conn.commit()
+        except Exception as err:
+          logging.error(err)
+          #print "Error:",sys.exc_info()[0]
+        #print "theory_hrs:%f" % theory_hrs
+        #print "problem_hrs:%f" % problem_hrs
+        #print "MCQ_hrs:%f" % MCQ_hrs
+        #print "revision_hrs:%f" % revision_hrs
+        logging.info("Theory Hrs:%f,Problem Hrs:%f,MCQ Hrs:%f,Revision Hrs:%f",theory_hrs,problem_hrs,MCQ_hrs,revision_hrs)
+ 
+#Calculation of preperation level
+      sum_of_sec_pts = sum_of_secured_points(sec_pts)
+      
+    except Exception as err:
+      logging.error(err)
+      #print "Error:",sys.exc_info()[0]
+  #print "\nSum of secured points:%d" % sum_of_sec_pts
+
+  x_sum = percent_marks(Xmarks,sum_of_sec_pts)
+  #print "x marks:%f" % x_sum
+  xi_sum = percent_marks(XImarks,sum_of_sec_pts)
+  #print "xi marks:%f" % xi_sum
+  total_marks = percent_marks(15,fixed_pts)
+  #print "total x and xi :%d" % total_marks
+  total = (x_sum + xi_sum)
+  #print "total:%f" % total
+  prep_marks = total + sum_of_sec_pts
+  fixed_total = fixed_pts + total_marks
+  user_prep_level = preparation_level(prep_marks,fixed_total)
+  #print "\nPreparation Level is: %d\n\n " % user_prep_level
+
+#set revision = 1 if user_prep_level is above 95%
+ #if(user_prep_level >= 95):
+  #  update = "update student_results set revision = 1 where user_id=%s" % option.uidfile
+   # cursor.execute(update)
+
+
+#Inserting values into user_prep_level
+  preplevel = "insert into user_prep_levels(user_id,prep_level,login_date) values('%s','%d',NOW())" % (option.uidfile,user_prep_level)
+  logging.info("Inserting user : %s Preparation Level into user_prep_levels",option.uidfile)
+  cursor.execute(preplevel)
+  if(user_prep_level >= 95):
+    update = "update student_results set revision_hrs = 1,total_study_hrs = total_study_hrs+1 where user_id=%s and (total_study_hrs = 0  and total_study_hrs < 5)" % option.uidfile
+    cursor.execute(update)
+
+  conn.commit()
+except Exception,err:
+  logging.error(err)
+  #print "User not exists,\n",sys.exc_info()[0],sys.exc_info()[1]
+  #print "Error at {0}".format(errno)
+  conn.rollback()
+
+#Disconnect from server
+conn.close()
