@@ -1,0 +1,37 @@
+#!/usr/bin/python
+import sys
+from datetime import datetime
+from pymongo import Connection
+from pymongo.errors import ConnectionFailure
+import os
+import math
+import logging
+from optparse import *
+
+
+#Making Connection
+try:
+  c = Connection(host="localhost",port=27017)
+  print "connected succesfully"
+except ConnectionFailure, e:
+  sys.stderr.write("%s " % e)
+  sys.exit(1)
+
+#Database Connection
+db = c['timetable_development']
+
+#getting a collection
+collection = db['users']
+print collection.count()
+
+#name = "gouri"
+#db.users.insert({"name":name,"std":"X","medium":"English"})    
+#db.users.update({'name':'sushma'},{'std':'XI'});
+db.users.find();
+doc = collection.find()
+for i in doc:
+  db.users.update({"medium":"English"},{"subjects":{"name":["english","maths","hindi","science","history","civics"]}},multi = True);
+doc1 = collection.find();
+
+for j in doc1:
+  print j
