@@ -1,0 +1,75 @@
+LucAdv = Struct.new(:name, :ad_size, :value)
+LucAdvProblem = Struct.new(:ads, :max_cost)
+ 
+def lucrative_advertisement (problem)
+  num_ads = problem.ads.size
+  ads = problem.ads
+  max_cost = problem.max_cost
+ 
+  cost_matrix = zeros(num_ads, max_cost+1)
+ 
+  num_ads.times do |i|
+    (max_cost + 1).times do |j|
+      if(ads[i].ad_size > j)
+        cost_matrix[i][j] = cost_matrix[i-1][j]
+      else
+        cost_matrix[i][j] = [cost_matrix[i-1][j], ads[i].value + cost_matrix[i-1][j-ads[i].ad_size]].max
+      end
+    end
+  end
+ 
+  cost_matrix
+end
+ 
+def displayed_ads(problem, cost_matrix)
+  i = cost_matrix.size - 1
+  currentCost = cost_matrix[0].size - 1
+  marked = Array.new(cost_matrix.size, 0) 
+ 
+  while(i >= 0 && currentCost >= 0)
+    if(i == 0 && cost_matrix[i][currentCost] > 0 ) || (cost_matrix[i][currentCost] != cost_matrix[i-1][currentCost])
+      marked[i] = 1
+      currentCost -= problem.ads[i].ad_size
+    end
+    i -= 1
+  end
+  marked
+end
+ 
+def list_displayed_ads (problem, cost_matrix)
+  ads = problem.ads
+  used_ads = displayed_ads(problem, cost_matrix)
+ 
+  result = []
+ 
+  used_ads.each_with_index do |ad,i|
+    if ad > 0
+      result << ads[i].name
+    end
+  end
+ 
+  result.sort.join(', ')
+end
+ 
+def zeros(rows, cols)
+  Array.new(rows) do |row|
+    Array.new(cols, 0)
+  end
+end
+ 
+if $0 == __FILE__
+ 
+    ads = [
+      LucAdv.new('1'  , 9   , 3000) , LucAdv.new('2'             , 3  , 1000)  , 
+      LucAdv.new('3'                  , 6 , 2500) , LucAdv.new('4'            , 9  , 5000) 
+    ]
+ 
+  problem = LucAdvProblem.new(ads, 9)
+ 
+  cost_matrix  = lucrative_advertisement problem
+  puts
+  puts ' Lucrative advertisement Solution:'
+  puts
+  puts ' Ads to be Displayed: ' + list_displayed_ads(problem, cost_matrix)
+  puts 'With Maximum cost: ' + cost_matrix.last.last.to_s
+end
